@@ -191,8 +191,8 @@ class DiningAgent(BaseAgent):
         compliant_restaurants.sort(key=lambda x: x["price_per_person"])
         over_budget_restaurants.sort(key=lambda x: x["price_per_person"])
 
-        compliant_recommendations = self._generate_recommendations(compliant_restaurants[:3], headcount, True)
-        over_budget_recommendations = self._generate_recommendations(over_budget_restaurants[:3], headcount, False)
+        compliant_recommendations = self._generate_recommendations(compliant_restaurants[:3], headcount, True, dining_limit)
+        over_budget_recommendations = self._generate_recommendations(over_budget_restaurants[:3], headcount, False, user_budget)
 
         reasoning_steps = [
             f"搜索到{len(all_restaurants)}家餐厅",
@@ -274,12 +274,14 @@ class DiningAgent(BaseAgent):
         self,
         restaurants: List[dict],
         headcount: int,
-        is_compliant: bool
+        is_compliant: bool,
+        budget: float = None
     ) -> List[dict]:
         recommendations = []
         for restaurant in restaurants:
-            dishes = self._suggest_dishes(restaurant["recommended_dishes"], headcount)
-            total_dishes_price = sum(d["price"] for d in dishes)
+            dish_result = self._suggest_dishes(restaurant["recommended_dishes"], headcount, budget)
+            dishes = dish_result.get("dishes", []) if isinstance(dish_result, dict) else dish_result
+            total_dishes_price = dish_result.get("total_price", 0) if isinstance(dish_result, dict) else sum(d["price"] for d in dishes)
 
             recommendations.append({
                 "id": restaurant["id"],
@@ -297,24 +299,39 @@ class DiningAgent(BaseAgent):
             })
         return recommendations
 
-    def _suggest_dishes(self, dishes: List[dict], headcount: int) -> List[dict]:
+    def _suggest_dishes(self, dishes: List[dict], headcount: int, budget: float = None) -> List[dict]:
         if not dishes:
             return []
 
         sorted_dishes = sorted(dishes, key=lambda x: x.get("suitable_for", 1), reverse=True)
         suggested = []
         remaining = headcount
+        total_price = 0.0
 
         for dish in sorted_dishes:
-            suitable = dish.get("suitable_for", 1)
-            if remaining >= suitable:
+            dish_price = dish.get("price", 0)
+            dish_suitable = dish.get("suitable_for", 1)
+            
+            if budget and (total_price + dish_price) > budget:
+                continue
+            
+            if remaining >= dish_suitable:
                 suggested.append(dish)
-                remaining -= suitable
+                total_price += dish_price
+                remaining -= dish_suitable
 
         if not suggested and dishes:
-            suggested.append(dishes[0])
+            budget_dishes = [d for d in dishes if not budget or d.get("price", 0) <= budget]
+            if budget_dishes:
+                first = budget_dishes[0]
+                suggested.append(first)
+                total_price = first.get("price", 0)
 
-        return suggested
+        return {
+            "dishes": suggested,
+            "total_price": total_price,
+            "coverage": headcount - remaining
+        }
 
     async def _simple_search(self, input_data: dict) -> dict:
         city = input_data.get("city")
@@ -340,7 +357,7 @@ class DiningAgent(BaseAgent):
             total_amount = restaurant["price_per_person"] * headcount
             is_compliant = restaurant["price_per_person"] <= dining_limit
 
-            restaurant_data = self._generate_recommendations([restaurant], headcount, is_compliant)
+            restaurant_data = self._generate_recommendations([restaurant], headcount, is_compliant, dining_limit)
             if is_compliant:
                 compliant_restaurants.extend(restaurant_data)
             else:

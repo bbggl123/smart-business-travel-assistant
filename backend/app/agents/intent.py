@@ -518,10 +518,12 @@ class IntentUnderstandingAgent(BaseAgent):
 
             user_level_mapping = {
                 "基层": "基层员工", "普通员工": "基层员工", "员工": "基层员工",
-                "主管": "主管/资深专员", "资深专员": "主管/资深专员", "专员": "主管/资深专员",
-                "经理": "经理级", "经理级": "经理级",
-                "总监": "总监级", "总监级": "总监级",
-                "副总": "副总/高管", "高管": "副总/高管"
+                "初级": "基层员工", "专员": "基层员工", "普通专员": "基层员工",
+                "高级": "主管/资深专员", "资深": "主管/资深专员",
+                "主管": "主管/资深专员", "资深专员": "主管/资深专员",
+                "经理": "经理级", "部门经理": "经理级", "项目经理": "经理级", "高级经理": "经理级",
+                "总监": "总监级", "高级总监": "总监级",
+                "副总": "副总/高管", "副总裁": "副总/高管", "高管": "副总/高管", "VP": "副总/高管", "CXO": "副总/高管"
             }
 
             transport_mapping = {
@@ -882,3 +884,63 @@ class IntentUnderstandingAgent(BaseAgent):
     def clear_context(self, session_id: str):
         if session_id in self.context:
             del self.context[session_id]
+
+    def normalize_date(self, date_str: str) -> str:
+        """将自然语言日期转换为标准格式 YYYY-MM-DD"""
+        if not date_str:
+            return date_str
+
+        import re
+        from datetime import datetime, timedelta
+
+        today = datetime.now()
+        date_str = date_str.strip()
+
+        patterns = [
+            (r"今天", today),
+            (r"明天", today + timedelta(days=1)),
+            (r"后天", today + timedelta(days=2)),
+            (r"大后天", today + timedelta(days=3)),
+            (r"昨天", today - timedelta(days=1)),
+            (r"前天", today - timedelta(days=2)),
+        ]
+
+        for pattern, date in patterns:
+            if re.search(pattern, date_str):
+                return date.strftime("%Y-%m-%d")
+
+        weekday_map = {
+            "周一": 0, "星期一": 0,
+            "周二": 1, "星期二": 1,
+            "周三": 2, "星期三": 2,
+            "周四": 3, "星期四": 3,
+            "周五": 4, "星期五": 4,
+            "周六": 5, "星期六": 5,
+            "周日": 6, "星期天": 6,
+        }
+
+        for weekday_name, weekday_num in weekday_map.items():
+            if weekday_name in date_str:
+                current_weekday = today.weekday()
+                days_ahead = weekday_num - current_weekday
+                if days_ahead <= 0:
+                    days_ahead += 7
+                target_date = today + timedelta(days=days_ahead)
+                return target_date.strftime("%Y-%m-%d")
+
+        month_day_pattern = r"(\d{1,2})月(\d{1,2})[日号]?"
+        match = re.search(month_day_pattern, date_str)
+        if match:
+            month, day = int(match.group(1)), int(match.group(2))
+            year = today.year
+            if month < today.month or (month == today.month and day < today.day):
+                year += 1
+            return f"{year}-{month:02d}-{day:02d}"
+
+        date_pattern = r"(\d{4})[-/年]?(\d{1,2})[-/月]?(\d{1,2})[日号]?"
+        match = re.search(date_pattern, date_str)
+        if match:
+            year, month, day = int(match.group(1)), int(match.group(2)), int(match.group(3))
+            return f"{year}-{month:02d}-{day:02d}"
+
+        return date_str
