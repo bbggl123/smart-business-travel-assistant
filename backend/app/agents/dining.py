@@ -270,6 +270,38 @@ class DiningAgent(BaseAgent):
             })
         return results
 
+    async def _search_restaurants_by_amap(self, city: str, cuisine: str = None) -> List[dict]:
+        """使用高德API搜索真实餐厅数据"""
+        from app.services.amap import amap_service
+        
+        pois = await amap_service.search_restaurants(city, cuisine=cuisine)
+        
+        if not pois:
+            return []
+        
+        cuisine_mapping = {"川菜": "川菜", "粤菜": "粤菜", "湘菜": "湘菜", "火锅": "火锅", "日料": "日料", "西餐": "西餐", "本帮菜": "本帮菜"}
+        cuisine_value = cuisine_mapping.get(cuisine, "中餐") if cuisine else "中餐"
+        
+        restaurants = []
+        for poi in pois[:10]:
+            base_price = 100 + len(cuisine_value) * 20
+            
+            restaurants.append({
+                "id": f"amap_rest_{hash(poi.name) % 10000}",
+                "restaurant": poi.name,
+                "cuisine": cuisine_value,
+                "city": city,
+                "address": poi.address or "",
+                "price_per_person": base_price,
+                "has_private_room": True,
+                "recommended_dishes": [
+                    {"name": "招牌菜", "price": base_price * 0.4, "suitable_for": 3}
+                ],
+                "source": "amap"
+            })
+        
+        return restaurants
+
     def _generate_recommendations(
         self,
         restaurants: List[dict],

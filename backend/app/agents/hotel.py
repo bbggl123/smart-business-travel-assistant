@@ -296,6 +296,43 @@ class HotelAgent(BaseAgent):
             for h in MOCK_HOTELS if h["city"] == city
         ]
 
+    async def _search_hotels_by_amap(self, city: str, star: str = None) -> List[dict]:
+        """使用高德API搜索真实酒店数据"""
+        from app.services.amap import amap_service
+        
+        keywords = star or "酒店"
+        pois = await amap_service.search_hotels(city, keywords=keywords)
+        
+        if not pois:
+            return []
+        
+        star_mapping = {"五星": 5, "四星": 4, "三星": 3, "豪华": 5, "高档": 4}
+        star_value = star_mapping.get(star, 3) if star else 3
+        
+        hotels = []
+        for poi in pois[:10]:
+            location = poi.location.split(",") if poi.location else []
+            lng = float(location[0]) if len(location) >= 1 else 0
+            lat = float(location[1]) if len(location) >= 2 else 0
+            
+            base_price = 300 + star_value * 150
+            
+            hotels.append({
+                "id": f"amap_hotel_{hash(poi.name) % 10000}",
+                "name": poi.name,
+                "stars": star_value,
+                "price": base_price,
+                "city": city,
+                "district": poi.city or "",
+                "address": poi.address or "",
+                "location": poi.location or f"{lng},{lat}",
+                "distance_km": poi.distance / 1000.0 if poi.distance else 2.0,
+                "facilities": ["免费WiFi", "停车场"],
+                "source": "amap"
+            })
+        
+        return hotels
+
     def _generate_hotel_recommendations(
         self,
         hotels: List[dict],

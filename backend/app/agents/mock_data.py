@@ -8,7 +8,7 @@ import subprocess
 import os
 
 
-SKILL_DIR = r"c:\Users\Administrator\Downloads\digital-dialogue-hub-main\web-content-fetcher-main"
+SKILL_DIR = "/workspace/web-content-fetcher-main"
 FETCH_SCRIPT = os.path.join(SKILL_DIR, "scripts", "fetch.py")
 
 
@@ -210,14 +210,16 @@ class MockDataAgent(BaseAgent):
     def _get_fetch_urls(self, data_type: str) -> List[str]:
         urls = {
             "flight": [
-                "https://www.ctrip.com",
-                "https://flights.ctrip.com"
+                "https://flights.ctrip.com/international/flights/pekg-pvg.html",
+                "https://flights.ctrip.com/international/flights/beijing-shanghai/"
             ],
             "hotel": [
-                "https://www.ctrip.com/hotels"
+                "https://hotels.ctrip.com/hotels/list?q=上海",
+                "https://hotels.ctrip.com/hotels/list?q=北京"
             ],
             "restaurant": [
-                "https://www.dianping.com"
+                "https://www.dianping.com/search/keyword/1/0/%E4%B8%8A%E6%B5%B7",
+                "https://www.dianping.com/search/keyword/1/0/%E5%8C%97%E4%BA%AC"
             ]
         }
         return urls.get(data_type, [])
@@ -243,25 +245,88 @@ class MockDataAgent(BaseAgent):
             return ""
 
     def _parse_content(self, content: str, data_type: str) -> List[dict]:
+        import re
         parsed = []
-        if data_type == "flight" and "航班" in content:
-            parsed.append({
-                "source": "web_content",
-                "data_type": "flight",
-                "content_preview": content[:200]
-            })
-        elif data_type == "hotel" and "酒店" in content:
-            parsed.append({
-                "source": "web_content",
-                "data_type": "hotel",
-                "content_preview": content[:200]
-            })
-        elif data_type == "restaurant" and ("餐厅" in content or "美食" in content):
-            parsed.append({
-                "source": "web_content",
-                "data_type": "restaurant",
-                "content_preview": content[:200]
-            })
+        
+        if data_type == "flight":
+            flight_patterns = [
+                r'([A-Z]{2}[0-9]{3,4})\s*[:：]?\s*([^\s,<]+)\s*→\s*([^\s,<]+)',
+                r'([A-Z]{2}[0-9]{3,4})[\s-]*([^\n,<]{2,8})[\s-]*([^\n,<]{2,8})',
+                r'航班[：:]?\s*([A-Z]{2}[0-9]{3,4})',
+            ]
+            for pattern in flight_patterns:
+                matches = re.findall(pattern, content, re.IGNORECASE)
+                for match in matches[:5]:
+                    if len(match) >= 3:
+                        parsed.append({
+                            "source": "web_content",
+                            "data_type": "flight",
+                            "flight_no": match[0] if match[0] else match[1] if len(match) > 1 else "Unknown",
+                            "provider": "待确认",
+                            "departure_city": match[1] if len(match) > 1 else "待确认",
+                            "arrival_city": match[2] if len(match) > 2 else "待确认",
+                            "base_price": 0,
+                            "content_preview": content[:200]
+                        })
+            if not parsed:
+                parsed.append({
+                    "source": "web_content",
+                    "data_type": "flight",
+                    "content_preview": content[:500]
+                })
+        
+        elif data_type == "hotel":
+            hotel_patterns = [
+                r'([^\n,<]{2,10})酒店[^\n,<]{0,20}(?:¥|价格|price)[:：]?\s*(\d+)',
+                r'([^\n,<]{2,10})[^\n,<]{0,10}(?:五星|四星|三星|豪华|舒适)',
+            ]
+            for pattern in hotel_patterns:
+                matches = re.findall(pattern, content, re.IGNORECASE)
+                for match in matches[:5]:
+                    if match:
+                        name = match[0].strip() if isinstance(match, tuple) else match
+                        price = int(match[1]) if isinstance(match, tuple) and len(match) > 1 and match[1].isdigit() else 0
+                        parsed.append({
+                            "source": "web_content",
+                            "data_type": "hotel",
+                            "name": name if name else "待确认酒店",
+                            "stars": 0,
+                            "base_price": price,
+                            "content_preview": content[:200]
+                        })
+            if not parsed:
+                parsed.append({
+                    "source": "web_content",
+                    "data_type": "hotel",
+                    "content_preview": content[:500]
+                })
+        
+        elif data_type == "restaurant":
+            rest_patterns = [
+                r'([^\n,<]{2,10})(?:餐厅|饭店|菜馆)[^\n,<]{0,30}(?:¥|价格|人均)[:：]?\s*(\d+)',
+                r'([^\n,<]{2,10})[^\n,<]{0,20}(?:川菜|粤菜|湘菜|火锅|日料|西餐)',
+            ]
+            for pattern in rest_patterns:
+                matches = re.findall(pattern, content, re.IGNORECASE)
+                for match in matches[:5]:
+                    if match:
+                        name = match[0].strip() if isinstance(match, tuple) else match
+                        price = int(match[1]) if isinstance(match, tuple) and len(match) > 1 and str(match[1]).isdigit() else 0
+                        parsed.append({
+                            "source": "web_content",
+                            "data_type": "restaurant",
+                            "restaurant": name if name else "待确认餐厅",
+                            "cuisine": "待确认",
+                            "base_price": price,
+                            "content_preview": content[:200]
+                        })
+            if not parsed:
+                parsed.append({
+                    "source": "web_content",
+                    "data_type": "restaurant",
+                    "content_preview": content[:500]
+                })
+        
         return parsed
 
     def _generate_variants(self, template: List[dict], count: int) -> List[dict]:
