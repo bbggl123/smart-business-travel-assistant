@@ -356,6 +356,12 @@ class DiningAgent(BaseAgent):
         for restaurant in all_restaurants:
             total_amount = restaurant["price_per_person"] * headcount
             is_compliant = restaurant["price_per_person"] <= dining_limit
+            restaurant["is_compliant"] = is_compliant
+            restaurant["compliance"] = {
+                "is_compliant": is_compliant,
+                "limit": dining_limit,
+                "over_budget": (restaurant["price_per_person"] - dining_limit) * headcount if not is_compliant else None
+            }
 
             restaurant_data = self._generate_recommendations([restaurant], headcount, is_compliant, dining_limit)
             if is_compliant:
