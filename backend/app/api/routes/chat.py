@@ -1,10 +1,12 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from sse_starlette.sse import EventSourceResponse
+from pydantic import BaseModel
 import asyncio
 import uuid
 import json
 from datetime import datetime
+from typing import Optional
 from app.api.types import (
     ApiResponse, ChatSendRequest, ChatMessage,
     IntentParseRequest, IntentData, Entities, Question,
@@ -437,4 +439,63 @@ async def clarify_intent(request: ClarifyRequest):
         )
     except Exception as e:
         logger.error(f"Clarify error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class SelectionConfirmRequest(BaseModel):
+    session_id: Optional[str] = None
+    transport_selection: Optional[dict] = None
+    hotel_selection: Optional[dict] = None
+    dining_selection: Optional[dict] = None
+    trip_data: Optional[dict] = None
+
+
+@router.post("/selection/confirm")
+async def confirm_selection(request: SelectionConfirmRequest):
+    try:
+        session_id = request.session_id or str(uuid.uuid4())
+        
+        trip_data = request.trip_data or {}
+        
+        transport_data = None
+        if request.transport_selection:
+            transport_data = request.transport_selection.get("option", {})
+        
+        hotel_data = None
+        if request.hotel_selection:
+            hotel_data = request.hotel_selection
+        
+        dining_data = None
+        if request.dining_selection:
+            dining_data = request.dining_selection
+        
+        approval_input = {
+            "trip_data": {
+                "departure": trip_data.get("departure"),
+                "destination": trip_data.get("destination"),
+                "start_date": trip_data.get("start_date"),
+                "end_date": trip_data.get("end_date"),
+                "purpose": trip_data.get("purpose"),
+                "user_level": trip_data.get("user_level")
+            },
+            "transport": transport_data,
+            "hotel": hotel_data,
+            "dining": dining_data
+        }
+        
+        approval_result = await approval_agent.process(approval_input)
+        
+        return ApiResponse(
+            code=0,
+            message="success",
+            data={
+                "status": "completed",
+                "approval_form": approval_result.get("approval_form", {}),
+                "total_cost": approval_result.get("total_cost", 0),
+                "html": approval_result.get("html", ""),
+                "pdf_size": approval_result.get("pdf_size", 0)
+            }
+        )
+    except Exception as e:
+        logger.error(f"Selection confirm error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

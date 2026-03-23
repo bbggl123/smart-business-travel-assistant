@@ -239,6 +239,28 @@ class ApiClient {
     );
   }
 
+  asyncSelectionConfirm(
+    sessionId: string,
+    tripData: any,
+    transportSelection: any,
+    hotelSelection: any,
+    diningSelection: any
+  ): Promise<ApiResponse<any>> {
+    return this.request<ApiResponse<any>>(
+      "/api/chat/selection/confirm",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          session_id: sessionId,
+          trip_data: tripData,
+          transport_selection: transportSelection,
+          hotel_selection: hotelSelection,
+          dining_selection: diningSelection,
+        }),
+      }
+    );
+  }
+
   asyncInvoiceRecognize(
     request: InvoiceRecognizeRequest
   ): Promise<ApiResponse<InvoiceRecognizeResponse>> {

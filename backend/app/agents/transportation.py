@@ -318,30 +318,18 @@ class TransportationAgent(BaseAgent):
                 
                 if compliant_flights:
                     best_flight = min(compliant_flights, key=lambda x: x["price"])
-                    if best_train["price"] > best_flight["price"]:
-                        recommendations.append({
-                            "category": "info",
-                            "type": "flight",
-                            "option": best_flight,
-                            "compliance": {
-                                "is_compliant": True,
-                                "limit": flight_budget,
-                                "savings": flight_budget - best_flight["price"]
-                            },
-                            "reason": f"高铁价格为{best_train['price']}元，比特价机票{best_flight['price']}元贵{best_train['price'] - best_flight['price']}元，仅供参考"
-                        })
-                    else:
-                        recommendations.append({
-                            "category": "info",
-                            "type": "flight",
-                            "option": best_flight,
-                            "compliance": {
-                                "is_compliant": True,
-                                "limit": flight_budget,
-                                "savings": flight_budget - best_flight["price"]
-                            },
-                            "reason": f"高铁价格为{best_train['price']}元，特价机票{best_flight['price']}元，仅供参考"
-                        })
+                    recommendations.append({
+                        "category": "info",
+                        "type": "flight",
+                        "option": best_flight,
+                        "compliance": {
+                            "is_compliant": True,
+                            "limit": flight_budget,
+                            "savings": flight_budget - best_flight["price"]
+                        },
+                        "reason": f"符合差标的机票价格：{best_flight['price']}元",
+                        "is_reference_only": True
+                    })
                         
             elif over_budget_trains:
                 cheapest_expensive_train = min(over_budget_trains, key=lambda x: x["price"])
@@ -368,7 +356,8 @@ class TransportationAgent(BaseAgent):
                             "limit": flight_budget,
                             "savings": flight_budget - best_flight["price"]
                         },
-                        "reason": f"高铁超标，特价机票{best_flight['price']}元更经济，仅供参考"
+                        "reason": f"符合差标的机票价格：{best_flight['price']}元",
+                        "is_reference_only": True
                     })
 
         elif transport_type in ["flight", "both"]:

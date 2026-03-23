@@ -217,8 +217,12 @@ class IntentUnderstandingAgent(BaseAgent):
         
         dining_needed = entities.get("dining_needed")
         dining_is_yes = dining_needed and dining_needed not in ["否", "不需要", "no", "No", "不需要宴请"]
-        if dining_is_yes and missing_dining:
-            all_missing.extend([f for f in missing_dining if f not in all_missing])
+        
+        if not dining_needed:
+            if "dining_needed" not in all_missing:
+                all_missing.append("dining_needed")
+        elif dining_is_yes and missing_dining:
+            all_missing.extend([f for f in missing_dining if f not in all_missing and f != "dining_needed"])
         
         field_display_names = {
             "user_level": "职级", 

@@ -141,6 +141,7 @@ class HotelAgent(BaseAgent):
         budget_limit = knowledge.get("budget_limit", 400)
         city = input_data.get("city")
         customer_location = input_data.get("customer_location", "")
+        user_preference_stars = input_data.get("star", "")
         use_amap = input_data.get("use_amap", True)
 
         all_hotels = self._search_hotels_in_city(city)
@@ -148,21 +149,46 @@ class HotelAgent(BaseAgent):
         if use_amap and customer_location:
             all_hotels = await self._calculate_real_distances(all_hotels, customer_location)
 
+        high_end_stars = ["四星级", "五星级", "豪华型", "高档"]
+        user_prefers_high_end = user_preference_stars in high_end_stars if user_preference_stars else False
+
         compliant_hotels = [h for h in all_hotels if h["price"] <= budget_limit]
         alternative_hotels = [h for h in all_hotels if h["price"] > budget_limit]
 
         compliant_hotels.sort(key=lambda x: (x.get("real_distance_km", x.get("distance_km", 999)), -x["stars"]))
         alternative_hotels.sort(key=lambda x: (x.get("real_distance_km", x.get("distance_km", 999)), x["price"]))
 
-        compliant_recommendations = self._generate_hotel_recommendations(compliant_hotels[:3], budget_limit, True)
-        alternative_recommendations = self._generate_hotel_recommendations(alternative_hotels[:3], budget_limit, False)
+        nearby_threshold = 3.0
+        nearby_compliant_hotels = [h for h in compliant_hotels if h.get("real_distance_km", h.get("distance_km", 999)) <= nearby_threshold]
+        far_compliant_hotels = [h for h in compliant_hotels if h.get("real_distance_km", h.get("distance_km", 999)) > nearby_threshold]
+
+        high_end_compliant = [h for h in compliant_hotels if h["stars"] >= 4]
+
+        if user_prefers_high_end and not nearby_compliant_hotels and far_compliant_hotels:
+            scenario = "C"
+            recommendations_type = "far_compliant"
+            compliant_recommendations = self._generate_hotel_recommendations(far_compliant_hotels[:3], budget_limit, True, True)
+        elif user_prefers_high_end and nearby_compliant_hotels:
+            scenario = "B"
+            recommendations_type = "compliant_nearby"
+            compliant_recommendations = self._generate_hotel_recommendations(nearby_compliant_hotels[:3], budget_limit, True, False)
+        else:
+            scenario = "A"
+            recommendations_type = "compliant"
+            compliant_recommendations = self._generate_hotel_recommendations(compliant_hotels[:3], budget_limit, True, False)
+
+        if user_prefers_high_end and high_end_compliant:
+            alternative_recommendations = self._generate_hotel_recommendations(high_end_compliant[:3], budget_limit, False, True)
+        else:
+            alternative_recommendations = self._generate_hotel_recommendations(alternative_hotels[:3], budget_limit, False, False)
 
         reasoning_steps = [
             f"搜索到{len(all_hotels)}家酒店",
             f"符合差标（≤{budget_limit}元）：{len(compliant_hotels)}家",
             f"超出差标：{len(alternative_hotels)}家",
+            f"用户期望：{user_preference_stars or '不限'}（{'超标风险' if user_prefers_high_end else '合理'}）",
             f"使用高德API计算真实距离：{'是' if use_amap and customer_location else '否'}",
-            f"生成合规推荐{len(compliant_recommendations)}家，替代推荐{len(alternative_recommendations)}家"
+            f"推荐场景：{scenario}，生成{recommendations_type}推荐{len(compliant_recommendations)}家"
         ]
 
         return COTLayerResult(
@@ -176,7 +202,11 @@ class HotelAgent(BaseAgent):
                 "alternative_recommendations": alternative_recommendations,
                 "budget_limit": budget_limit,
                 "has_compliant_options": len(compliant_hotels) > 0,
-                "used_real_distance": use_amap and customer_location
+                "used_real_distance": use_amap and customer_location,
+                "user_prefers_high_end": user_prefers_high_end,
+                "scenario": scenario,
+                "recommendations_type": recommendations_type,
+                "nearby_threshold_km": nearby_threshold
             },
             reasoning_steps=reasoning_steps,
             confidence=0.9
@@ -265,7 +295,8 @@ class HotelAgent(BaseAgent):
         self,
         hotels: List[dict],
         budget_limit: float,
-        is_compliant: bool
+        is_compliant: bool,
+        is_far: bool = False
     ) -> List[dict]:
         recommendations = []
         for hotel in hotels:
@@ -285,6 +316,7 @@ class HotelAgent(BaseAgent):
                 "transport_info": transport_info,
                 "facilities": hotel["facilities"],
                 "distance_source": hotel.get("distance_source", "mock"),
+                "is_far_location": is_far,
                 "compliance": {
                     "is_compliant": is_compliant,
                     "limit": budget_limit,
@@ -336,7 +368,7 @@ class HotelAgent(BaseAgent):
             if star and hotel["stars"] != star:
                 continue
             is_compliant = hotel["price"] <= budget_limit
-            hotel_data = self._generate_hotel_recommendations([hotel], budget_limit, is_compliant)
+            hotel_data = self._generate_hotel_recommendations([hotel], budget_limit, is_compliant, False)
             if is_compliant:
                 compliant_hotels.extend(hotel_data)
             else:
