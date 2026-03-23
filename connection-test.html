@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>连接测试</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 40px; background: #f5f5f5; }
+    .test { padding: 20px; margin: 10px 0; border-radius: 8px; }
+    .success { background: #d4edda; color: #155724; }
+    .error { background: #f8d7da; color: #721c24; }
+    .pending { background: #fff3cd; color: #856404; }
+    button { padding: 10px 20px; font-size: 16px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>前后端连接测试</h1>
+
+  <div id="results"></div>
+
+  <button onclick="runTests()">重新测试</button>
+
+  <script>
+    const API_BASE = 'http://localhost:8000';
+
+    async function testEndpoint(name, url, options = {}) {
+      const result = { name, status: 'pending', message: '' };
+      const start = Date.now();
+      try {
+        const response = await fetch(url, {
+          timeout: 5000,
+          ...options
+        });
+        const data = await response.json();
+        result.status = 'success';
+        result.message = `${response.status} - ${JSON.stringify(data)}`;
+      } catch (e) {
+        result.status = 'error';
+        result.message = e.message;
+      }
+      result.duration = Date.now() - start;
+      return result;
+    }
+
+    async function runTests() {
+      const resultsDiv = document.getElementById('results');
+      resultsDiv.innerHTML = '<div class="test pending">测试中...</div>';
+
+      const tests = [
+        await testEndpoint('Health检查', `${API_BASE}/health`),
+        await testEndpoint('Chat API', `${API_BASE}/api/chat/send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: '测试', session_id: 'test' })
+        })
+      ];
+
+      resultsDiv.innerHTML = tests.map(t => `
+        <div class="test ${t.status}">
+          <strong>${t.name}</strong><br>
+          状态: ${t.status}<br>
+          耗时: ${t.duration}ms<br>
+          结果: ${t.message}
+        </div>
+      `).join('');
+    }
+
+    runTests();
+  </script>
+</body>
+</html>
