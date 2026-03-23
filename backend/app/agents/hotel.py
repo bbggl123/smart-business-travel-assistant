@@ -130,15 +130,17 @@ class HotelAgent(BaseAgent):
                 "city_tier": city_tier,
                 "hotel_policy": hotel_policy,
                 "budget_limit": budget_limit,
-                "user_level": user_level
+                "user_level": user_level,
+                "city": city,
+                "star": input_data.get("star"),
+                "customer_location": input_data.get("customer_location", "")
             },
             reasoning_steps=reasoning_steps,
             confidence=0.95
         )
 
     async def reasoning_decision_layer(self, input_data: dict, cot_result: COTResult) -> COTLayerResult:
-        knowledge = input_data.get("knowledge_retrieval_output", {})
-        budget_limit = knowledge.get("budget_limit", 400)
+        budget_limit = input_data.get("budget_limit", 400)
         city = input_data.get("city")
         customer_location = input_data.get("customer_location", "")
         user_preference_stars = input_data.get("star", "")
@@ -213,8 +215,8 @@ class HotelAgent(BaseAgent):
         )
 
     async def response_generation_layer(self, input_data: dict, cot_result: COTResult) -> COTLayerResult:
-        reasoning = input_data.get("reasoning_decision_output", {})
-        knowledge = input_data.get("knowledge_retrieval_output", {})
+        reasoning = input_data
+        knowledge = input_data
 
         response_data = {
             "status": "completed",
@@ -224,7 +226,9 @@ class HotelAgent(BaseAgent):
             "total_alternative": len(reasoning.get("alternative_hotels", [])),
             "budget_limit": reasoning.get("budget_limit", 400),
             "city_tier": knowledge.get("city_tier", "一线"),
-            "used_real_distance": reasoning.get("used_real_distance", False)
+            "used_real_distance": reasoning.get("used_real_distance", False),
+            "scenario": reasoning.get("scenario"),
+            "recommendations_type": reasoning.get("recommendations_type")
         }
 
         reasoning_steps = [
@@ -232,6 +236,7 @@ class HotelAgent(BaseAgent):
             f"合规推荐：{len(response_data['compliant_hotels'])}家",
             f"替代推荐：{len(response_data['alternative_hotels'])}家",
             f"预算上限：{response_data['budget_limit']}元/晚",
+            f"推荐场景：{response_data.get('scenario', 'unknown')}",
             f"使用真实距离计算：{'是' if response_data['used_real_distance'] else '否'}"
         ]
 
