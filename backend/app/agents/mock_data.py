@@ -234,14 +234,33 @@ class MockDataAgent(BaseAgent):
                 text=True,
                 timeout=60
             )
-            if result.returncode == 0:
+            if result.returncode == 0 and result.stdout.strip():
                 self.logger.info(f"Successfully fetched content from {url}")
                 return result.stdout
-            else:
-                self.logger.warning(f"Failed to fetch {url}: {result.stderr}")
-                return ""
+            
+            self.logger.warning(f"Primary fetch failed for {url}, trying Jina Reader")
+            return await self._fetch_with_jina(url, max_chars)
+            
         except Exception as e:
             self.logger.error(f"Error fetching {url}: {e}")
+            return await self._fetch_with_jina(url, max_chars)
+    
+    async def _fetch_with_jina(self, url: str, max_chars: int = 30000) -> str:
+        """使用Jina Reader作为备选抓取方案"""
+        try:
+            jina_url = f"https://r.jina.ai/{url}"
+            import httpx
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(jina_url)
+                if response.status_code == 200:
+                    content = response.text[:max_chars]
+                    self.logger.info(f"Jina Reader fetched {len(content)} chars from {url}")
+                    return content
+                else:
+                    self.logger.warning(f"Jina Reader failed for {url}: {response.status_code}")
+                    return ""
+        except Exception as e:
+            self.logger.error(f"Jina Reader error for {url}: {e}")
             return ""
 
     def _parse_content(self, content: str, data_type: str) -> List[dict]:
