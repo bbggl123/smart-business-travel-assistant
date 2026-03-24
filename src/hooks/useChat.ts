@@ -2,6 +2,8 @@ import { useState, useCallback, useRef } from "react";
 import { apiClient } from "@/lib/api";
 import type {
   ChatMessage,
+} from "@/lib/mock-data";
+import type {
   ChatRequest,
   TransportSearchResponse,
   HotelSearchResponse,
@@ -45,10 +47,12 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
   const abortControllerRef = useRef<AbortController | null>(null);
   const fullContentRef = useRef<string>("");
   const assistantMessageIdRef = useRef<string | null>(null);
+  const requestIdRef = useRef<number>(0);
 
   const sendMessage = useCallback(async (message: string) => {
     if (!message.trim()) return;
 
+    const currentRequestId = ++requestIdRef.current;
     const currentAssistantMsgId = assistantMessageIdRef.current;
 
     if (abortControllerRef.current) {
@@ -56,7 +60,6 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
     }
 
     fullContentRef.current = "";
-    assistantMessageIdRef.current = null;
 
     setMessages((prev) => {
       const filtered = prev.filter((msg) => msg.id !== currentAssistantMsgId);
@@ -108,10 +111,15 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
 
       let buffer = "";
       let messageCreated = false;
+      assistantMessageIdRef.current = null;
 
       while (true) {
         const { done, value } = await reader!.read();
         if (done) break;
+
+        if (currentRequestId !== requestIdRef.current) {
+          break;
+        }
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
@@ -181,16 +189,19 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
         }
       }
 
-      if (options.onAgentResponse) {
+      if (currentRequestId === requestIdRef.current && options.onAgentResponse) {
         options.onAgentResponse("intent", fullContentRef.current, missingFields, questions);
       }
 
       setStreamingContent(null);
       abortControllerRef.current = null;
+      assistantMessageIdRef.current = null;
 
     } catch (error: any) {
       if (error.name === "AbortError") {
         setStreamingContent(null);
+        abortControllerRef.current = null;
+        assistantMessageIdRef.current = null;
         return;
       }
 
@@ -218,8 +229,11 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
 
       setStreamingContent(null);
       abortControllerRef.current = null;
+      assistantMessageIdRef.current = null;
     } finally {
-      setIsLoading(false);
+      if (currentRequestId === requestIdRef.current) {
+        setIsLoading(false);
+      }
     }
   }, [sessionId, options]);
 

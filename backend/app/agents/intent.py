@@ -405,48 +405,59 @@ class IntentUnderstandingAgent(BaseAgent):
         else:
             prompt = f"""你是一个专业的商旅助手，擅长分析用户的出差需求。
 
-请分析用户的输入，进行以下推理：
-1. 语义解析：提取用户消息中的实体
-2. 意图分类：判断用户的意图类型
-3. 信息提取：从用户消息中提取结构化信息
-4. 完整性检查：与必填字段对比，识别缺失字段
+## 用户输入
+{message}
 
-用户输入：{message}
+## 任务
+1. 理解用户自然语言输入的语义
+2. 提取结构化信息
+3. 判断是否需要追问缺失信息
 
+## 提取字段（请直接使用以下英文字段名）
+- departure: 出发城市
+- destination: 目的城市
+- start_date: 出发日期（标准化格式：YYYY-MM-DD，如"下周一"转为具体日期）
+- end_date: 返回日期
+- user_level: 职级（标准值：基层员工、主管/资深专员、经理级、总监级、副总/高管）
+- purpose: 出差目的
+- transport_preference: 出行方式（标准值：飞机、火车、都行）
+- customer_location: 客户具体地址
+- hotel_needed: 是否需要住宿（标准值：是、否）
+- hotel_requirements: 酒店要求（如五星级、四星级等）
+- dining_needed: 是否涉及宴请（标准值：是、否）
+- dining_date: 宴请日期
+- dining_location: 宴请地点
+- dining_budget: 宴请人均预算金额
+- dietary_requirements: 饮食要求（菜系、口味等）
+
+## 职级识别规则
+- "基层"、"普通员工"、"员工"、"专员" → 基层员工
+- "高级"、"资深"、"主管" → 主管/资深专员
+- "经理"、"部门经理"、"项目经理" → 经理级
+- "总监"、"高级总监" → 总监级
+- "副总"、"副总裁"、"VP"、"CXO"、"高管" → 副总/高管
+
+## 输出格式
 请以JSON格式返回，包含：
 - intent_type: 意图类型 (trip_planning/invoice/mock_data/info_clarification)
-- entities: 提取的实体信息，包含所有以下字段（如果用户在消息中提到了相关信息）：
-  * departure: 出发城市或地点
-  * destination: 目的城市或地点
-  * start_date: 出发日期（如"4月1号"、"下周一"、"明天"等）
-  * end_date: 返回日期
-  * user_level: 职级（如"基层员工"、"经理"、"总监"等，直接用中文）
-  * purpose: 出差目的
-  * transport_preference: 出行方式偏好（如"飞机"、"火车"、"高铁"等）
-  * customer_location: 客户的具体位置或地址
-  * hotel_needed: 是否需要酒店（如"是"、"需要"、"否"、"不需要"）
-  * hotel_requirements: 酒店要求（如"五星级"、"四星级"等）
-  * dining_needed: 是否涉及宴请（如"是"、"需要"、"否"、"不需要"）
-  * dining_date: 宴请日期
-  * dining_location: 宴请地点
-  * dining_budget: 宴请人均预算
-  * dietary_requirements: 饮食要求或口味偏好
-- missing_fields: 仍然缺失的字段列表（从以下字段中选择：departure, destination, start_date, end_date, user_level, purpose, transport_preference, customer_location, hotel_needed, hotel_requirements, dining_needed, dining_date, dining_location, dining_budget, dietary_requirements）
+- entities: 提取的实体信息（只包含上述英文字段名，值使用标准值）
+- missing_fields: 仍然缺失的字段列表（使用中文显示名：职级、出发地、目的地、出发日期、返回日期、出差目的、出行方式、客户位置、是否需要住宿、住宿要求、是否涉及宴请、宴请时间、宴请地点、饮食要求、计划花费金额）
 - questions: 需要追问的问题列表（每轮最多3个）
 
-重要：如果用户提到了职级（如"经理"、"总监"、"基层员工"），请同时提取并放入user_level字段。
-重要：如果用户提到出行方式（如"高铁"、"火车"、"飞机"），请同时提取并放入transport_preference字段。
-重要：如果用户提到客户位置或地址，请提取到customer_location字段。
-重要：如果用户提到"需要宴请"或"不需要宴请"，请提取到dining_needed字段。
-重要：如果用户提到宴请相关（时间、地点、预算、口味），请提取到对应字段。"""
+## 重要提醒
+1. 直接输出英文字段名，不要输出中文或拼音字段名
+2. 职级、交通方式、布尔值请使用上述标准值
+3. 日期请尝试标准化为 YYYY-MM-DD 格式（如用户说"下周一"，请转换为具体日期）
+4. 如果用户提到多个信息，全部提取，不要只提取部分"""
 
-            system_prompt = "你是一个专业的商旅助手，擅长分析用户的出差需求。"
+            system_prompt = """你是一个专业的商旅助手。请直接返回JSON格式的结果。"""
 
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt}
         ]
 
+        response_content = ""
         try:
             response_content = await gateway.chat_no_stream(messages)
             import re
@@ -459,7 +470,8 @@ class IntentUnderstandingAgent(BaseAgent):
             else:
                 result_data = json.loads(response_content)
 
-            field_mapping = {
+            # ===== 简化的字段映射：只处理LLM可能输出的变体字段名 =====
+            field_name_corrections = {
                 "position_level": "user_level",
                 "departure_date": "start_date",
                 "return_date": "end_date",
@@ -471,43 +483,23 @@ class IntentUnderstandingAgent(BaseAgent):
                 "departure_date_specific": "start_date",
                 "hotel_required": "hotel_needed",
                 "departure_time_preference": "transport_preference",
-                "职级": "user_level",
-                "级别": "user_level",
-                "出发地点": "departure",
-                "出发城市": "departure",
-                "目的地城市": "destination",
-                "目的地点": "destination",
-                "出差目的": "purpose",
-                "目的": "purpose",
-                "出发日期": "start_date",
-                "返回日期": "end_date",
-                "返程日期": "end_date",
-                "出差日期": "start_date",
-                "人数": "headcount",
-                "出差人数": "headcount",
-                "需要住宿": "hotel_needed",
-                "酒店要求": "hotel_requirements",
-                "住宿要求": "hotel_requirements",
-                "出行方式": "transport_preference",
-                "交通方式": "transport_preference",
-                "交通工具": "transport_preference",
-                "客户地点": "customer_location",
-                "客户地址": "customer_location",
-                "宴请需求": "dining_needed",
-                "是否宴请": "dining_needed",
-                "需要宴请": "dining_needed",
-                "宴请日期": "dining_date",
-                "宴请时间": "dining_date",
-                "宴请地点": "dining_location",
-                "宴请场所": "dining_location",
-                "饮食要求": "dietary_requirements",
-                "口味要求": "dietary_requirements",
-                "菜系要求": "dietary_requirements",
-                "宴请预算": "dining_budget",
-                "人均预算": "dining_budget",
-                "预算金额": "dining_budget"
+                "destination_location": "destination",
+                "departure_location": "departure",
+                "trip_purpose": "purpose",
+                "travel_purpose": "purpose",
             }
 
+            # ===== 标准值映射：让LLM理解业务标准的值域 =====
+            # 职级标准化（直接让LLM输出标准值，减少后处理）
+            user_level_canonical = {
+                "基层员工", "主管/资深专员", "经理级", "总监级", "副总/高管"
+            }
+            # 交通方式标准化
+            transport_canonical = {"飞机", "火车", "都行"}
+            # 布尔值标准化
+            yes_no_canonical = {"是", "否"}
+
+            # 允许的字段列表
             allowed_fields = {
                 "departure", "destination", "start_date", "user_level", "purpose", 
                 "end_date", "headcount", "hotel_needed", "transport_preference",
@@ -516,62 +508,59 @@ class IntentUnderstandingAgent(BaseAgent):
                 "dietary_requirements", "dining_budget"
             }
 
-            user_level_mapping = {
-                "基层": "基层员工", "普通员工": "基层员工", "员工": "基层员工",
-                "初级": "基层员工", "专员": "基层员工", "普通专员": "基层员工",
-                "高级": "主管/资深专员", "资深": "主管/资深专员",
-                "主管": "主管/资深专员", "资深专员": "主管/资深专员",
-                "经理": "经理级", "部门经理": "经理级", "项目经理": "经理级", "高级经理": "经理级",
-                "总监": "总监级", "高级总监": "总监级",
-                "副总": "副总/高管", "副总裁": "副总/高管", "高管": "副总/高管", "VP": "副总/高管", "CXO": "副总/高管"
-            }
-
-            transport_mapping = {
-                "飞机": "飞机", "航班": "飞机", "坐飞机": "飞机", "flight": "飞机",
-                "火车": "火车", "高铁": "火车", "火车票": "火车", "train": "火车",
-                "都行": "都行", "都可以": "都行", "无所谓": "都行"
-            }
-
-            yes_no_mapping = {
-                "是": "是", "需要": "是", "要": "是", "好": "是", "需要住宿": "是",
-                "不需要": "否", "不需要住宿": "否", "否": "否", "不用": "否", "no": "否"
-            }
-
+            # ===== 语义级字段后处理：只做必要的值标准化 =====
             entities = result_data.get("entities", {})
-            filtered_entities = {}
-            for old_field, new_field in list(field_mapping.items()):
-                if old_field in entities:
-                    value = entities[old_field]
-                    if new_field == "user_level" and value in user_level_mapping:
-                        value = user_level_mapping[value]
-                    elif new_field == "transport_preference" and value in transport_mapping:
-                        value = transport_mapping[value]
-                    elif new_field in ["hotel_needed", "dining_needed"] and value in yes_no_mapping:
-                        value = yes_no_mapping[value]
-                    if new_field and new_field in allowed_fields:
-                        filtered_entities[new_field] = value
-            for k, v in entities.items():
-                if k in allowed_fields:
-                    value = v
-                    if k == "user_level" and v in user_level_mapping:
-                        value = user_level_mapping[v]
-                    elif k == "transport_preference" and v in transport_mapping:
-                        value = transport_mapping[v]
-                    elif k in ["hotel_needed", "dining_needed"] and v in yes_no_mapping:
-                        value = yes_no_mapping[v]
-                    filtered_entities[k] = value
-            entities = filtered_entities
+            corrected_entities = {}
 
+            # 1. 先修正字段名
+            for old_field, new_field in field_name_corrections.items():
+                if old_field in entities and new_field in allowed_fields:
+                    corrected_entities[new_field] = entities[old_field]
+
+            # 2. 保留原始允许字段
+            for k, v in entities.items():
+                if k in allowed_fields and k not in corrected_entities:
+                    corrected_entities[k] = v
+
+            # 3. 语义级值标准化 - 只有当值不在标准域内时才尝试转换
+            for field, value in list(corrected_entities.items()):
+                if not value:
+                    continue
+                    
+                # 职级标准化：如果输入值不在标准职级列表中，尝试语义映射
+                if field == "user_level" and value not in user_level_canonical:
+                    user_level_mapping = {
+                        "基层": "基层员工", "普通员工": "基层员工", "员工": "基层员工",
+                        "初级": "基层员工", "专员": "基层员工", "普通专员": "基层员工",
+                        "高级": "主管/资深专员", "资深": "主管/资深专员",
+                        "主管": "主管/资深专员", "资深专员": "主管/资深专员",
+                        "经理": "经理级", "部门经理": "经理级", "项目经理": "经理级", "高级经理": "经理级",
+                        "总监": "总监级", "高级总监": "总监级",
+                        "副总": "副总/高管", "副总裁": "副总/高管", "高管": "副总/高管", "VP": "副总/高管", "CXO": "副总/高管"
+                    }
+                    corrected_entities[field] = user_level_mapping.get(value, value)
+
+                # 交通方式标准化
+                elif field == "transport_preference" and value not in transport_canonical:
+                    transport_mapping = {
+                        "飞机": "飞机", "航班": "飞机", "坐飞机": "飞机", "flight": "飞机",
+                        "火车": "火车", "高铁": "火车", "火车票": "火车", "train": "火车",
+                        "都行": "都行", "都可以": "都行", "无所谓": "都行"
+                    }
+                    corrected_entities[field] = transport_mapping.get(value, value)
+
+                # 布尔值标准化
+                elif field in ["hotel_needed", "dining_needed"] and value not in yes_no_canonical:
+                    yes_no_mapping = {
+                        "是": "是", "需要": "是", "要": "是", "好": "是",
+                        "不需要": "否", "不需要住宿": "否", "否": "否", "不用": "否", "no": "否"
+                    }
+                    corrected_entities[field] = yes_no_mapping.get(value, value)
+
+            entities = corrected_entities
+
+            # ===== 简化 missing_fields 处理 =====
             missing_fields = result_data.get("missing_fields", [])
-            allowed_missing = {
-                "departure", "destination", "start_date", "user_level", "purpose", "end_date", 
-                "headcount", "hotel_needed", "transport_preference", "customer_location", 
-                "hotel_requirements", "dining_needed", "dining_date", "dining_location",
-                "dietary_requirements", "dining_budget",
-                "职级", "出发地", "目的地", "出发日期", "返回日期", "出差目的", "出差人数", 
-                "是否需要住宿", "出行偏好", "客户位置", "住宿要求", "是否涉及宴请",
-                "宴请时间", "宴请地点", "饮食要求", "计划花费金额"
-            }
             display_names = {
                 "user_level": "职级", "departure": "出发地", "destination": "目的地",
                 "start_date": "出发日期", "end_date": "返回日期", "purpose": "出差目的",
@@ -581,14 +570,22 @@ class IntentUnderstandingAgent(BaseAgent):
                 "dining_date": "宴请时间", "dining_location": "宴请地点",
                 "dietary_requirements": "饮食要求", "dining_budget": "计划花费金额"
             }
+            
+            # 如果 missing_fields 包含中文字段名，转换为英文
+            field_name_reverse = {v: k for k, v in display_names.items()}
             mapped_missing = []
             for f in missing_fields:
-                if f in allowed_missing:
+                # 如果是中文，先尝试转为英文
+                if f in field_name_reverse:
+                    f = field_name_reverse[f]
+                if f in allowed_fields:
                     mapped_missing.append(display_names.get(f, f))
+                elif f in display_names.values():
+                    mapped_missing.append(f)
 
             result_data["missing_fields"] = mapped_missing
             result_data["entities"] = entities
-            self.logger.info(f"[LLM Parse] Raw response length: {len(response_content)}, Parsed entities: {result_data.get('entities', {})}")
+            self.logger.info(f"[LLM Parse] Parsed entities: {result_data.get('entities', {})}, missing: {mapped_missing}")
 
             if not entities and pending_questions:
                 self.logger.info(f"[LLM Parse] Entities empty, using fallback extraction")
