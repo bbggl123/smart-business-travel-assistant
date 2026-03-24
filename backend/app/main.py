@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from app.api.routes import chat, transport, hotel, dining, approval, invoice, voice, booking
+from app.api.routes import chat, transport, hotel, dining, approval, invoice, voice, booking, reimbursement
 from app.storage.redis_client import get_redis, close_redis
 from app.storage.message_queue import get_message_queue, close_message_queue
 from app.utils.logger import logger
@@ -52,6 +52,7 @@ app.include_router(approval.router)
 app.include_router(invoice.router)
 app.include_router(voice.router)
 app.include_router(booking.router)
+app.include_router(reimbursement.router)
 
 
 @app.get("/")

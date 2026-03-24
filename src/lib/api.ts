@@ -388,6 +388,10 @@ class ApiClient {
   asyncHealthCheck(): Promise<{ status: string }> {
     return this.request<{ status: string }>("/health");
   }
+
+  asyncSimpleHealthCheck(): Promise<{ connected: boolean }> {
+    return this.request<{ connected: boolean }>("/health");
+  }
 }
 
 export const apiClient = new ApiClient();

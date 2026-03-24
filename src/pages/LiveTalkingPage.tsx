@@ -47,8 +47,10 @@ export default function LiveTalkingPage() {
   useEffect(() => {
     apiClient.asyncHealthCheck()
       .then((res) => {
-        if (res.code === 0) {
+        if (res && res.status === "healthy") {
           setIsConnected(true);
+        } else {
+          setIsConnected(false);
         }
       })
       .catch(() => setIsConnected(false));

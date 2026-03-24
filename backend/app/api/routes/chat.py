@@ -187,17 +187,25 @@ async def stream_message(request: ChatSendRequest):
                 summary_text += f"📅 时间：{entities.get('start_date', '待定')} 至 {entities.get('end_date', '待定')}\n"
                 summary_text += f"🎯 目的：{entities.get('purpose', '商务出差')}\n\n"
 
+                transport_selection_options = []
                 if transport_result:
                     transport_options = transport_result.get("recommendations", [])
                     if transport_options:
                         summary_text += "✈️ 交通方案：\n"
-                        for opt in transport_options:
+                        for idx, opt in enumerate(transport_options[:3], 1):
                             opt_data = opt.get("option", {})
                             category = opt.get("category", "")
                             reason = opt.get("reason", "")
-                            summary_text += f"  - [{category}] {opt_data.get('provider', '')} {opt_data.get('flight_no', opt_data.get('train_no', ''))}: {opt_data.get('departure', {}).get('city', '')} → {opt_data.get('arrival', {}).get('city', '')}, 价格: ¥{opt_data.get('price', 0)}, {reason}\n"
+                            transport_selection_options.append({
+                                "type": "transport",
+                                "index": idx,
+                                "id": opt_data.get("id", f"transport_{idx}"),
+                                "description": f"{opt_data.get('provider', '')} {opt_data.get('flight_no', opt_data.get('train_no', ''))}"
+                            })
+                            summary_text += f"  {idx}. [{category}] {opt_data.get('provider', '')} {opt_data.get('flight_no', opt_data.get('train_no', ''))}: {opt_data.get('departure', {}).get('city', '')} → {opt_data.get('arrival', {}).get('city', '')}, 价格: ¥{opt_data.get('price', 0)}, {reason}\n"
                         summary_text += "\n"
 
+                hotel_selection_options = []
                 if hotel_result:
                     compliant_hotels = hotel_result.get("compliant_hotels", [])
                     alternative_hotels = hotel_result.get("alternative_hotels", [])
@@ -205,18 +213,36 @@ async def stream_message(request: ChatSendRequest):
                     
                     if compliant_hotels or alternative_hotels:
                         summary_text += "🏨 酒店方案：\n"
+                        hotel_idx = 1
                         if compliant_hotels:
                             summary_text += f"  [合规方案 - 预算¥{budget_limit}/晚以内]\n"
                             for opt in compliant_hotels[:3]:
-                                summary_text += f"  - {opt.get('name', '')} ({opt.get('stars', '')}星): ¥{opt.get('price', 0)}/晚, 距客户位置 {opt.get('distance_km', 0)}km\n"
+                                hotel_selection_options.append({
+                                    "type": "hotel",
+                                    "index": hotel_idx,
+                                    "id": opt.get("id", f"hotel_{hotel_idx}"),
+                                    "name": opt.get("name", ""),
+                                    "description": f"{opt.get('name', '')} ({opt.get('stars', '')}星)"
+                                })
+                                summary_text += f"  {hotel_idx}. {opt.get('name', '')} ({opt.get('stars', '')}星): ¥{opt.get('price', 0)}/晚, 距客户位置 {opt.get('distance_km', 0)}km\n"
                                 summary_text += f"    设施: {', '.join(opt.get('facilities', [])[:3])}\n"
+                                hotel_idx += 1
                         if alternative_hotels:
                             summary_text += f"  [替代方案 - 豪华型酒店]\n"
                             for opt in alternative_hotels[:3]:
-                                summary_text += f"  - {opt.get('name', '')} ({opt.get('stars', '')}星): ¥{opt.get('price', 0)}/晚, 距客户位置 {opt.get('distance_km', 0)}km\n"
+                                hotel_selection_options.append({
+                                    "type": "hotel",
+                                    "index": hotel_idx,
+                                    "id": opt.get("id", f"hotel_{hotel_idx}"),
+                                    "name": opt.get("name", ""),
+                                    "description": f"{opt.get('name', '')} ({opt.get('stars', '')}星) - 位置较远"
+                                })
+                                summary_text += f"  {hotel_idx}. {opt.get('name', '')} ({opt.get('stars', '')}星): ¥{opt.get('price', 0)}/晚, 距客户位置 {opt.get('distance_km', 0)}km\n"
                                 summary_text += f"    交通: {opt.get('transport_info', '待确认')}\n"
+                                hotel_idx += 1
                         summary_text += "\n"
 
+                dining_selection_options = []
                 dining_result = None
                 dining_needed = entities.get("dining_needed")
                 if dining_needed and dining_needed != "否":
@@ -237,27 +263,42 @@ async def stream_message(request: ChatSendRequest):
                     
                     if compliant_restaurants or over_budget_restaurants:
                         summary_text += "🍽️ 宴请方案：\n"
+                        dining_idx = 1
                         if is_over_budget:
                             summary_text += f"  [超标提示] 您的预算超出差标上限¥{dining_limit}/人\n"
                         if compliant_restaurants:
                             summary_text += f"  [合规方案 - 预算¥{dining_limit}/人以内]\n"
                             for opt in compliant_restaurants[:3]:
-                                summary_text += f"  - {opt.get('restaurant', '')}: 人均¥{opt.get('price_per_person', 0)}, 总计¥{opt.get('total_amount', 0)}\n"
+                                dining_selection_options.append({
+                                    "type": "dining",
+                                    "index": dining_idx,
+                                    "id": opt.get("id", f"dining_{dining_idx}"),
+                                    "name": opt.get("restaurant", ""),
+                                    "description": f"{opt.get('restaurant', '')} - 人均¥{opt.get('price_per_person', 0)}"
+                                })
+                                summary_text += f"  {dining_idx}. {opt.get('restaurant', '')}: 人均¥{opt.get('price_per_person', 0)}, 总计¥{opt.get('total_amount', 0)}\n"
                                 dishes = opt.get('suggested_dishes', [])
                                 if dishes:
                                     summary_text += f"    推荐菜品: {', '.join(dishes[:3])}\n"
+                                dining_idx += 1
                         if over_budget_restaurants:
                             summary_text += f"  [替代方案 - 符合您预算要求]\n"
                             for opt in over_budget_restaurants[:3]:
-                                summary_text += f"  - {opt.get('restaurant', '')}: 人均¥{opt.get('price_per_person', 0)}, 总计¥{opt.get('total_amount', 0)}\n"
+                                dining_selection_options.append({
+                                    "type": "dining",
+                                    "index": dining_idx,
+                                    "id": opt.get("id", f"dining_{dining_idx}"),
+                                    "name": opt.get("restaurant", ""),
+                                    "description": f"{opt.get('restaurant', '')} - 人均¥{opt.get('price_per_person', 0)}"
+                                })
+                                summary_text += f"  {dining_idx}. {opt.get('restaurant', '')}: 人均¥{opt.get('price_per_person', 0)}, 总计¥{opt.get('total_amount', 0)}\n"
                                 dishes = opt.get('suggested_dishes', [])
                                 if dishes:
                                     summary_text += f"    推荐菜品: {', '.join(dishes[:3])}\n"
+                                dining_idx += 1
 
-                if approval_result:
-                    approval_content = approval_result.get("approval_content", "")
-                    if approval_content:
-                        summary_text += f"\n📄 审批单：\n{approval_content[:200]}..."
+                summary_text += "\n请确认您的选择（交通、酒店、宴请），我会为您生成审批单。\n"
+                summary_text += "例如：请选择方案1、2、3"
 
                 for char in summary_text:
                     yield {"event": "message", "data": json.dumps({"content": char})}
@@ -270,11 +311,16 @@ async def stream_message(request: ChatSendRequest):
                     "missing_fields": [],
                     "questions": [],
                     "intent_data": entities,
+                    "awaiting_selection": True,
+                    "selection_options": {
+                        "transport": transport_selection_options,
+                        "hotel": hotel_selection_options,
+                        "dining": dining_selection_options
+                    },
                     "planning_results": {
                         "transport": transport_result,
                         "hotel": hotel_result,
-                        "dining": dining_result,
-                        "approval": approval_result
+                        "dining": dining_result
                     }
                 })}
             else:
