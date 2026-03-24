@@ -19,6 +19,7 @@ from app.agents.hotel import HotelAgent
 from app.agents.dining import DiningAgent
 from app.agents.compliance import ComplianceAgent
 from app.agents.approval import ApprovalAgent
+from app.services.session_manager import session_manager
 from app.utils.logger import logger
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -86,8 +87,71 @@ async def send_message(request: ChatSendRequest):
 async def stream_message(request: ChatSendRequest):
     async def event_generator():
         try:
-            session_id = request.session_id
+            session_id = request.session_id or str(uuid.uuid4())
             user_message = request.message
+
+            if session_manager.has_active_selection(session_id):
+                planning_results = session_manager.get_planning_results(session_id)
+                selection_options = session_manager.get_selection_options(session_id)
+                
+                if planning_results and selection_options:
+                    selected = session_manager.parse_user_selection(user_message, selection_options)
+                    
+                    session_manager.update_session(session_id, awaiting_selection=False)
+                    
+                    approval_text = "正在根据您的选择生成审批单...\n\n"
+                    for char in approval_text:
+                        yield {"event": "message", "data": json.dumps({"content": char})}
+                        await asyncio.sleep(0.02)
+                    
+                    session_state = session_manager.get_session(session_id)
+                    intent_data = session_state.intent_data if session_state else {}
+                    transport_result = planning_results.get("transport")
+                    hotel_result = planning_results.get("hotel")
+                    dining_result = planning_results.get("dining")
+                    
+                    approval_input = {
+                        "trip_data": {
+                            "departure": intent_data.get("departure"),
+                            "destination": intent_data.get("destination"),
+                            "start_date": intent_data.get("start_date"),
+                            "end_date": intent_data.get("end_date"),
+                            "purpose": intent_data.get("purpose"),
+                            "user_level": intent_data.get("user_level")
+                        },
+                        "transport": transport_result,
+                        "hotel": hotel_result,
+                        "dining": dining_result,
+                        "selections": selected
+                    }
+                    
+                    approval_result = await approval_agent.process(approval_input)
+                    
+                    if approval_result:
+                        approval_content = approval_result.get("approval_content", "")
+                        html_content = approval_result.get("html", "")
+                        
+                        summary_text = "✅ 审批单已生成！\n\n"
+                        summary_text += f"📄 审批单内容预览：\n"
+                        summary_text += f"{approval_content[:500]}...\n\n" if len(approval_content) > 500 else f"{approval_content}\n\n"
+                        summary_text += "审批单已保存，您可以查看详情或提交审批。\n"
+                        
+                        for char in summary_text:
+                            yield {"event": "message", "data": json.dumps({"content": char})}
+                            await asyncio.sleep(0.02)
+                        
+                        yield {"event": "message_end", "data": json.dumps({
+                            "type": "end",
+                            "content": summary_text,
+                            "is_complete": True,
+                            "approval_generated": True,
+                            "approval_data": {
+                                "approval_id": approval_result.get("approval_id"),
+                                "content": approval_content,
+                                "html": html_content[:200] if html_content else ""
+                            }
+                        })}
+                        return
 
             intent_result = await intent_agent.process({
                 "session_id": session_id,
@@ -299,6 +363,23 @@ async def stream_message(request: ChatSendRequest):
 
                 summary_text += "\n请确认您的选择（交通、酒店、宴请），我会为您生成审批单。\n"
                 summary_text += "例如：请选择方案1、2、3"
+
+                session_manager.create_session(session_id)
+                session_manager.update_session(
+                    session_id,
+                    intent_data=entities,
+                    planning_results={
+                        "transport": transport_result,
+                        "hotel": hotel_result,
+                        "dining": dining_result
+                    },
+                    selection_options={
+                        "transport": transport_selection_options,
+                        "hotel": hotel_selection_options,
+                        "dining": dining_selection_options
+                    },
+                    awaiting_selection=True
+                )
 
                 for char in summary_text:
                     yield {"event": "message", "data": json.dumps({"content": char})}
