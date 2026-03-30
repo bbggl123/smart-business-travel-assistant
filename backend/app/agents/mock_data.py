@@ -143,11 +143,11 @@ class MockDataAgent(BaseAgent):
         )
 
     async def reasoning_decision_layer(self, input_data: dict, cot_result: COTResult) -> COTLayerResult:
-        knowledge = input_data.get("knowledge_retrieval_output", {})
-        template = knowledge.get("template", [])
+        knowledge = input_data if input_data.get("template") else input_data.get("knowledge_retrieval_output", {})
+        template = knowledge.get("template", input_data.get("template", []))
         count = input_data.get("count", 10)
-        use_real_data = knowledge.get("use_real_data", False)
-        data_type = knowledge.get("data_type", "flight")
+        use_real_data = knowledge.get("use_real_data", input_data.get("use_real_data", False))
+        data_type = knowledge.get("data_type", input_data.get("data_type", "flight"))
 
         real_data = []
         if use_real_data:
@@ -183,20 +183,29 @@ class MockDataAgent(BaseAgent):
         )
 
     async def response_generation_layer(self, input_data: dict, cot_result: COTResult) -> COTLayerResult:
-        reasoning = input_data.get("reasoning_decision_output", {})
+        reasoning = input_data if "all_data" in input_data else {}
+        knowledge = input_data if "template" in input_data else {}
         all_data = reasoning.get("all_data", [])
+        data_type = knowledge.get("data_type", input_data.get("data_type", "flight"))
+        real_data_count = len(reasoning.get("real_data", []))
+        mock_data_count = len(reasoning.get("variants", []))
 
         response_data = {
             "status": "completed",
+            "data_type": data_type,
             "data": all_data,
             "count": len(all_data),
+            "real_data_count": real_data_count,
+            "mock_data_count": mock_data_count,
             "format": "json"
         }
 
         reasoning_steps = [
             f"生成Mock数据集",
-            f"数据条数: {len(all_data)}",
-            f"数据格式: JSON"
+            f"数据类型: {data_type}",
+            f"真实数据: {real_data_count}条",
+            f"Mock数据: {mock_data_count}条",
+            f"总计: {len(all_data)}条"
         ]
 
         return COTLayerResult(

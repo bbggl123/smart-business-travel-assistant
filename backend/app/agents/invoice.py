@@ -32,13 +32,23 @@ class InvoiceAgent(BaseAgent):
             layer1 = await self.intent_understanding_layer(input_data, cot_result)
             cot_result.layers.append(layer1)
 
-            layer2 = await self.knowledge_retrieval_layer(layer1.output_data, cot_result)
+            ocr_input = {
+                "file_data": input_data.get("file_data"),
+                "file_type": input_data.get("file_type", "image"),
+                "source": input_data.get("source", "upload")
+            }
+            ocr_result = await self._recognize_with_ocr(ocr_input)
+
+            layer2_input = {**layer1.output_data, "ocr_result": ocr_result.get("invoice_data", {})}
+            layer2 = await self.knowledge_retrieval_layer(layer2_input, cot_result)
             cot_result.layers.append(layer2)
 
-            layer3 = await self.reasoning_decision_layer(layer2.output_data, cot_result)
+            layer3_input = {**layer2.output_data, "ocr_result": ocr_result.get("invoice_data", {})}
+            layer3 = await self.reasoning_decision_layer(layer3_input, cot_result)
             cot_result.layers.append(layer3)
 
-            layer4 = await self.response_generation_layer(layer3.output_data, cot_result)
+            layer4_input = {**layer3.output_data, "ocr_result": ocr_result.get("invoice_data", {})}
+            layer4 = await self.response_generation_layer(layer4_input, cot_result)
             cot_result.layers.append(layer4)
 
             cot_result.final_output = layer4.output_data
@@ -147,6 +157,8 @@ class InvoiceAgent(BaseAgent):
     async def response_generation_layer(self, input_data: dict, cot_result: COTResult) -> COTLayerResult:
         ocr_result = input_data.get("ocr_result", {})
         confidence = ocr_result.get("confidence", 0.85)
+        if confidence == 0.85 and ocr_result.get("extraction_method") == "mock":
+            confidence = 0.85
 
         low_confidence_fields = []
         for field in ["invoice_code", "invoice_number", "buyer_name", "seller_name", "total_amount"]:

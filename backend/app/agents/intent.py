@@ -471,15 +471,15 @@ class IntentUnderstandingAgent(BaseAgent):
         response_content = ""
         try:
             response_content = await gateway.chat_no_stream(messages)
-            import re
-            json_match = re.search(r'```json\s*([\s\S]*?)\s*```|`([\s\S]*?)`|\{[\s\S]*\}', response_content)
-            if json_match:
-                json_str = json_match.group(1) or json_match.group(2)
-                if not json_str:
-                    json_str = json_match.group(0)
-                result_data = json.loads(json_str)
-            else:
+            try:
                 result_data = json.loads(response_content)
+            except json.JSONDecodeError:
+                json_start = response_content.find("{")
+                json_end = response_content.rfind("}") + 1
+                if json_start >= 0 and json_end > json_start:
+                    result_data = json.loads(response_content[json_start:json_end])
+                else:
+                    result_data = self._semantic_fallback_parse(message)
 
             # ===== 简化的字段映射：只处理LLM可能输出的变体字段名 =====
             field_name_corrections = {
@@ -1001,3 +1001,103 @@ class IntentUnderstandingAgent(BaseAgent):
             return f"{year}-{month:02d}-{day:02d}"
 
         return date_str
+
+    def _semantic_fallback_parse(self, user_message: str) -> dict:
+        """当JSON解析失败时，使用语义理解进行fallback解析"""
+        msg_lower = user_message.lower()
+        
+        entities = {}
+        missing_fields = []
+        questions = []
+        
+        chinese_cities = {
+            "北京": ["北京", "beijing", "bj"],
+            "上海": ["上海", "shanghai", "sh"],
+            "广州": ["广州", "guangzhou", "gz"],
+            "深圳": ["深圳", "shenzhen", "sz"],
+            "杭州": ["杭州", "hangzhou", "hz"],
+            "成都": ["成都", "chengdu", "cd"],
+            "南京": ["南京", "nanjing", "nj"],
+            "武汉": ["武汉", "wuhan", "wh"],
+            "西安": ["西安", "xian", "xa"],
+        }
+        
+        departure = None
+        destination = None
+        for city, aliases in chinese_cities.items():
+            for alias in aliases:
+                if alias in msg_lower:
+                    if "从" in user_message and "去" in user_message:
+                        from_idx = user_message.find("从")
+                        to_idx = user_message.find("去")
+                        if from_idx < to_idx:
+                            city_part = user_message[from_idx+1:to_idx]
+                            if any(a in city_part for a in aliases):
+                                departure = city
+                            city_part = user_message[to_idx+1:to_idx+20]
+                            if any(a in city_part for a in aliases):
+                                destination = city
+                    elif "去" in user_message:
+                        to_idx = user_message.find("去")
+                        city_part = user_message[to_idx+1:to_idx+20]
+                        if any(a in city_part for a in aliases):
+                            destination = city
+                    elif "到" in user_message:
+                        to_idx = user_message.find("到")
+                        city_part = user_message[to_idx+1:to_idx+20]
+                        if any(a in city_part for a in aliases):
+                            destination = city
+                    break
+        
+        if departure:
+            entities["departure"] = departure
+        if destination:
+            entities["destination"] = destination
+        
+        import re
+        tomorrow_match = re.search(r"明天|后天|next\s*day", msg_lower)
+        if tomorrow_match:
+            from datetime import datetime, timedelta
+            if "明天" in tomorrow_match.group(0):
+                entities["start_date"] = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+            elif "后天" in tomorrow_match.group(0):
+                entities["start_date"] = (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%d")
+        
+        level_keywords = {
+            "基层员工": ["基层", "普通", "员工", "专员"],
+            "主管": ["主管", "leader"],
+            "经理": ["经理", "manager"],
+            "总监": ["总监", "director"],
+            "高管": ["高管", "VP", "副总"],
+        }
+        for level, keywords in level_keywords.items():
+            if any(kw in msg_lower for kw in keywords):
+                entities["user_level"] = level
+                break
+        
+        if "出差" in user_message or "商务" in user_message:
+            entities["purpose"] = "商务出差"
+        
+        if "飞机" in msg_lower or "航班" in msg_lower:
+            entities["transport_preference"] = "飞机"
+        elif "火车" in msg_lower or "高铁" in msg_lower:
+            entities["transport_preference"] = "火车"
+        
+        if "酒店" in msg_lower or "住宿" in msg_lower or "住" in msg_lower:
+            entities["hotel_needed"] = "是"
+        
+        if "宴请" in msg_lower or "请客" in msg_lower or "吃饭" in msg_lower:
+            entities["dining_needed"] = "是"
+        
+        required_fields = ["departure", "destination", "start_date", "user_level", "purpose"]
+        for field in required_fields:
+            if field not in entities:
+                missing_fields.append(field)
+        
+        return {
+            "entities": entities,
+            "missing_fields": missing_fields,
+            "questions": questions,
+            "intent_type": "trip_planning",
+            "parse_method": "semantic_fallback"
+        }

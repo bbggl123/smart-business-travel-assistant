@@ -205,7 +205,7 @@ async def stream_message(request: ChatSendRequest):
                     yield {"event": "message", "data": json.dumps({"content": char})}
                     await asyncio.sleep(0.02)
 
-                transport_result = await transport_agent.process({
+                transport_task = transport_agent.process({
                     "departure": entities.get("departure"),
                     "destination": entities.get("destination"),
                     "date": entities.get("start_date"),
@@ -213,7 +213,7 @@ async def stream_message(request: ChatSendRequest):
                     "type": entities.get("transport_preference", "both")
                 })
 
-                hotel_result = await hotel_agent.process({
+                hotel_task = hotel_agent.process({
                     "city": entities.get("destination"),
                     "check_in": entities.get("start_date"),
                     "check_out": entities.get("end_date"),
@@ -221,9 +221,9 @@ async def stream_message(request: ChatSendRequest):
                     "customer_location": entities.get("customer_location", "")
                 })
 
-                dining_result = None
+                dining_task = None
                 if entities.get("dining_needed"):
-                    dining_result = await dining_agent.process({
+                    dining_task = dining_agent.process({
                         "city": entities.get("destination"),
                         "date": entities.get("dining_date"),
                         "headcount": entities.get("headcount", 1),
@@ -231,6 +231,23 @@ async def stream_message(request: ChatSendRequest):
                         "user_level": entities.get("user_level", "基层员工"),
                         "cuisine": entities.get("dietary_requirements")
                     })
+
+                parallel_tasks = [transport_task, hotel_task]
+                if dining_task:
+                    parallel_tasks.append(dining_task)
+
+                parallel_results = await asyncio.gather(*parallel_tasks, return_exceptions=True)
+
+                transport_result = parallel_results[0] if not isinstance(parallel_results[0], Exception) else {}
+                hotel_result = parallel_results[1] if not isinstance(parallel_results[1], Exception) else {}
+                dining_result = parallel_results[2] if len(parallel_results) > 2 and not isinstance(parallel_results[2], Exception) else None
+
+                if isinstance(parallel_results[0], Exception):
+                    logger.error(f"Transport agent error: {parallel_results[0]}")
+                if isinstance(parallel_results[1], Exception):
+                    logger.error(f"Hotel agent error: {parallel_results[1]}")
+                if len(parallel_results) > 2 and isinstance(parallel_results[2], Exception):
+                    logger.error(f"Dining agent error: {parallel_results[2]}")
 
                 approval_input = {
                     "trip_data": {
