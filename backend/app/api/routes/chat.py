@@ -142,7 +142,7 @@ async def stream_message(request: ChatSendRequest):
                         
                         yield {"event": "message_end", "data": json.dumps({
                             "type": "end",
-                            "content": summary_text,
+                            "content": "",
                             "is_complete": True,
                             "approval_generated": True,
                             "approval_data": {
@@ -435,7 +435,7 @@ async def stream_message(request: ChatSendRequest):
                 await asyncio.sleep(0.02)
             yield {"event": "message_end", "data": json.dumps({
                 "type": "end",
-                "content": error_text,
+                "content": "",
                 "is_complete": False,
                 "error": str(e)
             })}

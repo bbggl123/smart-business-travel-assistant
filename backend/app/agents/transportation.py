@@ -115,6 +115,7 @@ class TransportationAgent(BaseAgent):
     async def knowledge_retrieval_layer(self, input_data: dict, cot_result: COTResult) -> COTLayerResult:
         user_level = input_data.get("user_level", "基层员工")
         destination = input_data.get("destination", "一线")
+        transport_type = input_data.get("transport_type", "both")
 
         city_tier = knowledge_base.retrieve_city_tier(destination)
         flight_policy = knowledge_base.retrieve_policies("flight", user_level)
@@ -137,7 +138,11 @@ class TransportationAgent(BaseAgent):
                 "train_policy": train_policy,
                 "flight_budget": flight_policy.get("max_price", 1000),
                 "train_budget": train_policy.get("max_price", 1000),
-                "allowed_cabin": flight_policy.get("cabin", "经济舱")
+                "allowed_cabin": flight_policy.get("cabin", "经济舱"),
+                "transport_type": transport_type,
+                "user_level": user_level,
+                "departure": input_data.get("departure"),
+                "destination": destination
             },
             reasoning_steps=reasoning_steps,
             confidence=0.95
@@ -170,6 +175,10 @@ class TransportationAgent(BaseAgent):
             transport_type, flight_budget
         )
 
+        knowledge = input_data.get("knowledge_retrieval_output", input_data)
+        flight_policy = knowledge.get("flight_policy", {})
+        train_policy = knowledge.get("train_policy", {})
+
         reasoning_steps = [
             f"搜索到{len(flight_options)}个航班选项，{len(compliant_flights)}个符合差标",
             f"搜索到{len(train_options)}个高铁选项，{len(compliant_trains)}个符合差标",
@@ -190,7 +199,9 @@ class TransportationAgent(BaseAgent):
                 "has_compliant_options": len(compliant_flights) > 0 or len(compliant_trains) > 0,
                 "flight_budget": flight_budget,
                 "train_budget": train_budget,
-                "transport_type": transport_type
+                "transport_type": transport_type,
+                "flight_policy": flight_policy,
+                "train_policy": train_policy
             },
             reasoning_steps=reasoning_steps,
             confidence=0.9
@@ -283,7 +294,8 @@ class TransportationAgent(BaseAgent):
         over_budget_flights: List[dict],
         over_budget_trains: List[dict],
         transport_type: str,
-        flight_budget: float
+        flight_budget: float,
+        train_budget: float = 1000
     ) -> List[dict]:
         recommendations = []
 
@@ -296,8 +308,8 @@ class TransportationAgent(BaseAgent):
                     "option": best_train,
                     "compliance": {
                         "is_compliant": True,
-                        "limit": 1000,
-                        "savings": 1000 - best_train["price"]
+                        "limit": train_budget,
+                        "savings": train_budget - best_train["price"]
                     },
                     "reason": "高铁出行，符合差旅标准"
                 })
@@ -310,16 +322,16 @@ class TransportationAgent(BaseAgent):
                         "option": cheapest_expensive_train,
                         "compliance": {
                             "is_compliant": False,
-                            "limit": 1000,
-                            "over_budget": cheapest_expensive_train["price"] - 1000
+                            "limit": train_budget,
+                            "over_budget": cheapest_expensive_train["price"] - train_budget
                         },
-                        "reason": f"超标{cheapest_expensive_train['price'] - 1000}元"
+                        "reason": f"超标{cheapest_expensive_train['price'] - train_budget}元，但您仍可选择"
                     })
                 
                 if compliant_flights:
                     best_flight = min(compliant_flights, key=lambda x: x["price"])
                     recommendations.append({
-                        "category": "info",
+                        "category": "sync_recommend",
                         "type": "flight",
                         "option": best_flight,
                         "compliance": {
@@ -327,8 +339,7 @@ class TransportationAgent(BaseAgent):
                             "limit": flight_budget,
                             "savings": flight_budget - best_flight["price"]
                         },
-                        "reason": f"符合差标的机票价格：{best_flight['price']}元",
-                        "is_reference_only": True
+                        "reason": f"特价机票{best_flight['price']}元，比高铁更便宜"
                     })
                         
             elif over_budget_trains:
@@ -339,16 +350,16 @@ class TransportationAgent(BaseAgent):
                     "option": cheapest_expensive_train,
                     "compliance": {
                         "is_compliant": False,
-                        "limit": 1000,
-                        "over_budget": cheapest_expensive_train["price"] - 1000
+                        "limit": train_budget,
+                        "over_budget": cheapest_expensive_train["price"] - train_budget
                     },
-                    "reason": f"超标{cheapest_expensive_train['price'] - 1000}元"
+                    "reason": f"超标{cheapest_expensive_train['price'] - train_budget}元，建议选择更经济的方案"
                 })
                 
                 if compliant_flights:
                     best_flight = min(compliant_flights, key=lambda x: x["price"])
                     recommendations.append({
-                        "category": "info",
+                        "category": "sync_recommend",
                         "type": "flight",
                         "option": best_flight,
                         "compliance": {
@@ -356,8 +367,20 @@ class TransportationAgent(BaseAgent):
                             "limit": flight_budget,
                             "savings": flight_budget - best_flight["price"]
                         },
-                        "reason": f"符合差标的机票价格：{best_flight['price']}元",
-                        "is_reference_only": True
+                        "reason": f"特价机票{best_flight['price']}元，符合差旅标准且更便宜"
+                    })
+                elif over_budget_flights:
+                    cheapest_flight = min(over_budget_flights, key=lambda x: x["price"])
+                    recommendations.append({
+                        "category": "sync_recommend",
+                        "type": "flight",
+                        "option": cheapest_flight,
+                        "compliance": {
+                            "is_compliant": False,
+                            "limit": flight_budget,
+                            "over_budget": cheapest_flight["price"] - flight_budget
+                        },
+                        "reason": f"机票{cheapest_flight['price']}元，是当前可选的最优方案"
                     })
 
         elif transport_type in ["flight", "both"]:
@@ -398,8 +421,8 @@ class TransportationAgent(BaseAgent):
                     "option": best_train,
                     "compliance": {
                         "is_compliant": True,
-                        "limit": 1000,
-                        "savings": 1000 - best_train["price"]
+                        "limit": train_budget,
+                        "savings": train_budget - best_train["price"]
                     },
                     "reason": "高铁出行，符合差旅标准"
                 })
@@ -412,10 +435,10 @@ class TransportationAgent(BaseAgent):
                     "option": cheapest_over,
                     "compliance": {
                         "is_compliant": False,
-                        "limit": 1000,
-                        "over_budget": cheapest_over["price"] - 1000
+                        "limit": train_budget,
+                        "over_budget": cheapest_over["price"] - train_budget
                     },
-                    "reason": f"超出差标{cheapest_over['price'] - 1000}元"
+                    "reason": f"超出差标{cheapest_over['price'] - train_budget}元"
                 })
 
         return recommendations

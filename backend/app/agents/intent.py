@@ -780,19 +780,57 @@ class IntentUnderstandingAgent(BaseAgent):
         missing_fields: List[str],
         entities: dict
     ) -> List[dict]:
-        priority_fields = [
-            "user_level", "departure", "destination", "purpose", 
-            "start_date", "end_date", "transport_preference",
-            "customer_location", "hotel_needed", "hotel_requirements"
-        ]
+        field_reverse_mapping = {
+            "职级": "user_level",
+            "出发地": "departure",
+            "目的地": "destination",
+            "出差目的": "purpose",
+            "出发日期": "start_date",
+            "返回日期": "end_date",
+            "出行方式": "transport_preference",
+            "客户位置": "customer_location",
+            "是否需要住宿": "hotel_needed",
+            "住宿要求": "hotel_requirements",
+            "是否涉及宴请": "dining_needed",
+            "宴请时间": "dining_date",
+            "宴请地点": "dining_location",
+            "饮食要求": "dietary_requirements",
+            "计划花费金额": "dining_budget",
+            "出差人数": "headcount"
+        }
         
-        dining_needed = entities.get("dining_needed", True)
-        if dining_needed:
-            priority_fields.extend(["dining_date", "dining_location", "dietary_requirements", "dining_budget"])
+        normalized_missing = []
+        for f in missing_fields:
+            if f in field_reverse_mapping:
+                normalized_missing.append(field_reverse_mapping[f])
+            elif f in ["dining_date", "dining_location", "dietary_requirements", "dining_budget", "dining_needed", 
+                       "user_level", "departure", "destination", "purpose", "start_date", "end_date", 
+                       "transport_preference", "customer_location", "hotel_needed", "hotel_requirements"]:
+                normalized_missing.append(f)
+        
+        dining_needed = entities.get("dining_needed")
+        dining_needed_cn = entities.get("是否涉及宴请")
+        has_dining_intent = dining_needed in ["是", True] or dining_needed_cn in ["是", True]
+        
+        if has_dining_intent:
+            priority_fields = [
+                "dining_date", "dining_location", "dietary_requirements", "dining_budget",
+                "departure", "destination", "start_date", "end_date",
+                "user_level", "purpose", "transport_preference",
+                "customer_location", "hotel_needed", "hotel_requirements"
+            ]
+        else:
+            priority_fields = [
+                "user_level", "departure", "destination", "purpose", 
+                "start_date", "end_date", "transport_preference",
+                "customer_location", "hotel_needed", "hotel_requirements"
+            ]
+            if "dining_needed" not in normalized_missing and "是否涉及宴请" in missing_fields:
+                priority_fields.append("dining_needed")
 
         priority_questions = []
         for field in priority_fields:
-            if field in missing_fields:
+            if field in normalized_missing:
                 question_text = self._get_default_question(field, entities)
                 priority_questions.append({
                     "field": field,

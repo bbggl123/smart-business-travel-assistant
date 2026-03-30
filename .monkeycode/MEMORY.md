@@ -37,20 +37,17 @@ Agent 在任务执行过程中发现的条目应遵循以下格式：
 - Date: 2026-03-30
 - Context: 用户要求对智能商旅助手项目进行全面检查和修复修复
 - Instructions:
-  - 修复前端消息重复渲染问题（ChatPage.tsx）- 已完成
-  - 修复COT引擎类型错误和边缘情况（cot/base.py, cot/engine.py）- 已完成
-  - 修复Intent Agent类型错误和边缘情况 - 已完成
+  - 修复前端消息重复渲染问题（chat.py message_end content字段重复）- 已完成
+  - 修复Intent Agent宴请字段追问优先级逻辑 - 已完成，当dining_needed=是时优先追问宴请相关字段
+  - 修复Transportation Agent火车超标同步推荐机票 - 已完成，添加sync_recommend类别
+  - 修复Hotel Agent超标双重推荐逻辑 - 已完成，实现compliant和alternative双重推荐
   - 验证LLM网关和紫东太初API连接 - 已完成，API Key: z0oxh3h9tbeq2gihnvdhq0el
-  - 测试Intent Understanding Agent的COT和追问逻辑 - 已完成
-  - 完善Mock Data Agent集成web-content-fetcher - 已完成
-  - 完善Invoice Agent发票识别和报销流程 - 已完成
-  - 验证Transportation Agent出行推荐逻辑 - 已完成
-  - 验证Hotel Agent超标双重推荐逻辑 - 已完成
-  - 验证Dining Agent超标双重展示逻辑 - 已完成
-  - 验证Approval Form Agent审批单生成 - 已完成
-  - 修复后端消息重复发送问题（chat.py message_end content字段重复）- 已完成
-  - 增强日期提取和标准化能力 - 已完成
-  - 前后端联调测试（至少3轮）- 已完成
+  - 待完成：Dispatcher Agent多Agent协作
+  - 待完成：Invoice Agent OCR服务接入
+  - 待完成：Mock Data Agent web-content-fetcher集成
+  - 待完成：移除正则降级方案
+  - 待完成：对话上下文管理增强
+  - 待执行：前后端联调测试（至少3轮）
 
 ### 项目知识
 
