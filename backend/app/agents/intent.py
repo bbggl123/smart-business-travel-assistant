@@ -1,7 +1,8 @@
 from app.agents.base import BaseAgent
 from app.cot.base import COTLayerResult, COTResult
 from app.cot.knowledge_base import knowledge_base
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
+from datetime import datetime, timedelta
 import json
 from app.llm.gateway import llm_gateway as gateway
 from app.utils.logger import logger
@@ -52,8 +53,11 @@ class IntentUnderstandingAgent(BaseAgent):
             return fallback
 
     async def intent_understanding_layer(self, input_data: dict, cot_result: COTResult) -> COTLayerResult:
-        session_id = input_data.get("session_id")
-        message = input_data.get("message")
+        session_id = input_data.get("session_id") or ""
+        message = input_data.get("message") or ""
+
+        if not session_id:
+            session_id = "default_session"
 
         if session_id not in self.context:
             self.context[session_id] = {
@@ -246,7 +250,7 @@ class IntentUnderstandingAgent(BaseAgent):
 
         if all_missing_cn:
             display_questions = priority_questions[:3] if priority_questions else [
-                {"field": f, "question": self._get_default_question(f, entities), "options": None}
+                {"field": str(f), "question": self._get_default_question(str(f), entities), "options": None}
                 for f in all_missing_cn[:3]
             ]
             response_text = self._generate_questions_response(display_questions, entities, knowledge)
@@ -286,7 +290,7 @@ class IntentUnderstandingAgent(BaseAgent):
             confidence=0.9
         )
 
-    async def _retry_parse_with_llm(self, message: str, context: dict, pending_questions: list = None) -> dict:
+    async def _retry_parse_with_llm(self, message: str, context: dict, pending_questions: Optional[list] = None) -> dict:
         retry_prompt = f"""用户输入：{message}
 
 请从上面的用户输入中提取出差相关的信息。即使信息不完整，也要尽力提取。
@@ -371,7 +375,7 @@ class IntentUnderstandingAgent(BaseAgent):
         
         return {}
 
-    async def _parse_intent_with_llm(self, message: str, context: dict, pending_questions: list = None) -> dict:
+    async def _parse_intent_with_llm(self, message: str, context: dict, pending_questions: Optional[list] = None) -> dict:
         pending_questions = pending_questions or []
         entities = context.get("entities", {})
         existing_info = "\n".join([f"- {k}: {v}" for k, v in entities.items() if v]) if entities else "无"
@@ -416,7 +420,7 @@ class IntentUnderstandingAgent(BaseAgent):
 ## 提取字段（请直接使用以下英文字段名）
 - departure: 出发城市
 - destination: 目的城市
-- start_date: 出发日期（标准化格式：YYYY-MM-DD，如"下周一"转为具体日期）
+- start_date: 出发日期（如果用户说"下周三"，当前是{ datetime.now().strftime('%Y年%m月%d日 %A') }，请计算并返回"YYYY-MM-DD"格式）
 - end_date: 返回日期
 - user_level: 职级（标准值：基层员工、主管/资深专员、经理级、总监级、副总/高管）
 - purpose: 出差目的
@@ -437,6 +441,13 @@ class IntentUnderstandingAgent(BaseAgent):
 - "总监"、"高级总监" → 总监级
 - "副总"、"副总裁"、"VP"、"CXO"、"高管" → 副总/高管
 
+## 日期识别规则
+- "今天" → {datetime.now().strftime('%Y-%m-%d')}
+- "明天" → {(datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')}
+- "后天" → {(datetime.now() + timedelta(days=2)).strftime('%Y-%m-%d')}
+- "下周三"、"周三" 等 → 计算对应的具体日期
+- "3月15日" → 根据当前月份判断是否跨年
+
 ## 输出格式
 请以JSON格式返回，包含：
 - intent_type: 意图类型 (trip_planning/invoice/mock_data/info_clarification)
@@ -447,7 +458,7 @@ class IntentUnderstandingAgent(BaseAgent):
 ## 重要提醒
 1. 直接输出英文字段名，不要输出中文或拼音字段名
 2. 职级、交通方式、布尔值请使用上述标准值
-3. 日期请尝试标准化为 YYYY-MM-DD 格式（如用户说"下周一"，请转换为具体日期）
+3. 日期请标准化为 YYYY-MM-DD 格式
 4. 如果用户提到多个信息，全部提取，不要只提取部分"""
 
             system_prompt = """你是一个专业的商旅助手。请直接返回JSON格式的结果。"""
@@ -558,6 +569,14 @@ class IntentUnderstandingAgent(BaseAgent):
                     corrected_entities[field] = yes_no_mapping.get(value, value)
 
             entities = corrected_entities
+
+            # ===== 日期标准化 =====
+            for date_field in ["start_date", "end_date", "dining_date"]:
+                date_val = entities.get(date_field)
+                if date_val and isinstance(date_val, str):
+                    normalized = self.normalize_date(date_val)
+                    if normalized:
+                        entities[date_field] = normalized
 
             # ===== 简化 missing_fields 处理 =====
             missing_fields = result_data.get("missing_fields", [])
@@ -706,8 +725,11 @@ class IntentUnderstandingAgent(BaseAgent):
         return result_data
 
     async def _simple_process(self, input_data: dict) -> dict:
-        session_id = input_data.get("session_id")
-        message = input_data.get("message")
+        session_id = input_data.get("session_id") or ""
+        message = input_data.get("message") or ""
+
+        if not session_id:
+            session_id = "default_session"
 
         if session_id not in self.context:
             self.context[session_id] = {

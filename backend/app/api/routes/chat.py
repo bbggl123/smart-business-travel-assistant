@@ -171,7 +171,7 @@ async def stream_message(request: ChatSendRequest):
                         await asyncio.sleep(0.02)
                     yield {"event": "message_end", "data": json.dumps({
                         "type": "end",
-                        "content": response_text,
+                        "content": "",
                         "is_complete": is_complete,
                         "missing_fields": missing_fields,
                         "questions": questions,
@@ -188,7 +188,7 @@ async def stream_message(request: ChatSendRequest):
                         await asyncio.sleep(0.02)
                     yield {"event": "message_end", "data": json.dumps({
                         "type": "end",
-                        "content": follow_up_text,
+                        "content": "",
                         "is_complete": False,
                         "missing_fields": missing_fields,
                         "questions": questions,
@@ -227,8 +227,9 @@ async def stream_message(request: ChatSendRequest):
                         "city": entities.get("destination"),
                         "date": entities.get("dining_date"),
                         "headcount": entities.get("headcount", 1),
-                        "budget": entities.get("dining_budget"),
-                        "user_level": entities.get("user_level", "基层员工")
+                        "budget_per_person": entities.get("dining_budget"),
+                        "user_level": entities.get("user_level", "基层员工"),
+                        "cuisine": entities.get("dietary_requirements")
                     })
 
                 approval_input = {
@@ -387,7 +388,7 @@ async def stream_message(request: ChatSendRequest):
 
                 yield {"event": "message_end", "data": json.dumps({
                     "type": "end",
-                    "content": summary_text,
+                    "content": "",
                     "is_complete": True,
                     "missing_fields": [],
                     "questions": [],
@@ -417,7 +418,7 @@ async def stream_message(request: ChatSendRequest):
 
                 yield {"event": "message_end", "data": json.dumps({
                     "type": "end",
-                    "content": response_text or default_text,
+                    "content": "",
                     "is_complete": is_complete,
                     "missing_fields": missing_fields,
                     "questions": questions,

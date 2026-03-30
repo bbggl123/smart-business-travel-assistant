@@ -282,7 +282,9 @@ export default function ChatPage() {
                   {msg.role === "assistant" ? (
                     <div className="markdown-content">
                       <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                        {msg.content}
+                        {streamingContent !== null && msg.id === messages[messages.length - 1]?.id
+                          ? streamingContent
+                          : msg.content}
                       </ReactMarkdown>
                       {streamingContent !== null && msg.id === messages[messages.length - 1]?.id && (
                         <span className="inline-block w-2 h-4 ml-1 bg-primary animate-pulse" />

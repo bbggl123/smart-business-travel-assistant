@@ -1,11 +1,12 @@
 from app.llm.gateway import llm_gateway as gateway
 from app.utils.logger import logger
+from typing import Optional, Any
 import json
 
 
 class COTPromptEngine:
     @staticmethod
-    def get_intent_understanding_prompt(user_message: str, context: dict = None) -> str:
+    def get_intent_understanding_prompt(user_message: str, context: Optional[dict] = None) -> str:
         context_str = ""
         if context:
             context_str = f"\n当前上下文：\n{json.dumps(context, ensure_ascii=False)}"
@@ -114,7 +115,7 @@ class COTEngine:
         layer_name: str,
         layer_func,
         input_data: dict,
-        context: dict = None
+        context: Optional[dict] = None
     ) -> dict:
         try:
             result = await layer_func(input_data, context)
@@ -128,20 +129,21 @@ class COTEngine:
     async def run_full_cot(
         self,
         user_message: str,
-        context: dict = None,
+        context: Optional[dict] = None,
         intent_func=None,
         knowledge_func=None,
         reasoning_func=None,
         response_func=None
     ) -> dict:
-        layers_result = {}
+        layers_result: dict[str, Any] = {}
+        intent_result: Any = None
 
         if intent_func:
             intent_prompt = self.prompt_engine.get_intent_understanding_prompt(user_message, context)
             intent_result = await intent_func(intent_prompt)
             layers_result["intent_understanding"] = intent_result
 
-        if knowledge_func and intent_func:
+        if knowledge_func and intent_func and intent_result is not None:
             try:
                 entities = json.loads(intent_result) if isinstance(intent_result, str) else intent_result
                 knowledge_prompt = self.prompt_engine.get_knowledge_retrieval_prompt(
@@ -154,7 +156,7 @@ class COTEngine:
                 logger.error(f"[COT] Knowledge retrieval error: {e}")
                 layers_result["knowledge_retrieval"] = {"error": str(e)}
 
-        if reasoning_func and intent_func:
+        if reasoning_func and intent_func and intent_result is not None:
             try:
                 entities = json.loads(intent_result) if isinstance(intent_result, str) else intent_result
                 knowledge = layers_result.get("knowledge_retrieval", {})
@@ -169,7 +171,7 @@ class COTEngine:
                 logger.error(f"[COT] Reasoning error: {e}")
                 layers_result["reasoning_decision"] = {"error": str(e)}
 
-        if response_func and intent_func:
+        if response_func and intent_func and intent_result is not None:
             try:
                 entities = json.loads(intent_result) if isinstance(intent_result, str) else intent_result
                 reasoning = layers_result.get("reasoning_decision", {})

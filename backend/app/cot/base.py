@@ -58,19 +58,19 @@ class BaseCOTAgent(ABC):
         )
 
     @abstractmethod
-    async def intent_understanding_layer(self, input_data: dict, cot_result: COTResult) -> dict:
+    async def intent_understanding_layer(self, input_data: dict, cot_result: COTResult) -> COTLayerResult:
         pass
 
     @abstractmethod
-    async def knowledge_retrieval_layer(self, input_data: dict, cot_result: COTResult) -> dict:
+    async def knowledge_retrieval_layer(self, input_data: dict, cot_result: COTResult) -> COTLayerResult:
         pass
 
     @abstractmethod
-    async def reasoning_decision_layer(self, input_data: dict, cot_result: COTResult) -> dict:
+    async def reasoning_decision_layer(self, input_data: dict, cot_result: COTResult) -> COTLayerResult:
         pass
 
     @abstractmethod
-    async def response_generation_layer(self, input_data: dict, cot_result: COTResult) -> dict:
+    async def response_generation_layer(self, input_data: dict, cot_result: COTResult) -> COTLayerResult:
         pass
 
     async def process_with_cot(self, input_data: dict) -> COTResult:
